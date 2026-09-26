@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>화재 현장 상황판</title>
+
+<!-- ★ 아래 YOUR_JAVASCRIPT_KEY 를 카카오 JavaScript 키로 바꾸세요 ★ -->
+<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=2c168b298897a976e326e3d0adbf984f&libraries=services"></script>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+  :root{
+    --ink:#0F1319; --panel:#171C25; --line:#252C38;
+    --text:#EDF0F4; --dim:#8B96A6;
+    --hot:#FF5A1F; --warm:#FFA726; --cool:#5C7A99;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--ink); color:var(--text);
+    font-family:Pretendard,-apple-system,sans-serif;
+    display:flex; flex-direction:column;
+    font-size:17px;
+  }
+  .grade{font-size:15px; font-weight:800; letter-spacing:-1.5px; color:var(--hot); margin-right:7px}
+  .grade.g1{color:var(--cool)}
+  .card.top{background:rgba(255,90,31,.06)}
+  .tag.news{border-color:var(--cool); color:var(--cool)}
+  .ownerbadge{
+    display:inline-block; font-size:12px; font-weight:700;
+    padding:3px 9px; border-radius:5px; margin-bottom:5px; margin-right:5px;
+    background:rgba(92,122,153,.22); color:var(--cool);
+  }
+  .newsbadge{
+    display:inline-block; font-size:12px; font-weight:700;
+    padding:3px 9px; border-radius:5px; margin-bottom:5px; margin-right:5px;
+    background:rgba(92,122,153,.18); color:#7fa9d8;
+  }
+  .msgbadge{
+    display:inline-block; font-size:12px; font-weight:700;
+    padding:3px 9px; border-radius:5px; margin-bottom:5px; margin-right:5px;
+    background:rgba(255,90,31,.2); color:var(--warm);
+  }
+  .visit{
+    display:inline-block; font-size:12px; font-weight:700;
+    padding:3px 9px; border-radius:5px; margin-bottom:5px;
+  }
+  .visit.ok{background:rgba(45,180,120,.16); color:#4ede9f}
+  .visit.soon{background:rgba(255,167,38,.16); color:#ffc078}
+  .visit.no{background:rgba(140,150,165,.14); color:#9aa5b5}
+  .card.busy{opacity:.5}
+  .filterbar{display:flex; gap:6px; padding:8px 18px 0}
+  .fbtn{
+    flex:1; padding:7px 0; font-size:13px; font-family:inherit;
+    background:var(--panel); color:var(--dim); border:1px solid var(--line);
+    border-radius:6px; cursor:pointer;
+  }
+  .fbtn.on{color:var(--text); border-color:var(--hot)}
+  .sortbtn{
+    margin-right:10px; padding:4px 10px; font-size:13px; font-family:inherit;
+    background:var(--panel); color:var(--text); border:1px solid var(--line);
+    border-radius:5px; cursor:pointer;
+  }
+    .addrbtn{grid-column:2; margin-top:8px; padding:7px 12px; font-size:14px; font-family:inherit;
+    background:var(--panel); color:var(--text); border:1px solid var(--line);
+    border-radius:6px; cursor:pointer; text-align:left; line-height:1.4}
+  .addrbtn.done{color:var(--warm); border-color:var(--hot); font-weight:600}
+  header{
+    padding:14px 18px calc(14px + env(safe-area-inset-top)) 18px;
+    border-bottom:1px solid var(--line);
+    display:flex; align-items:baseline; gap:12px;
+  }
+  header h1{font-size:19px; font-weight:700; letter-spacing:-.02em}
+  header .meta{font-size:13px; color:var(--dim); margin-left:auto}
+  header .count{color:var(--hot); font-weight:700}
+
+  #map{flex:0 0 52vh; background:var(--panel)}
+
+  #list{
+    flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    padding:8px 0 calc(24px + env(safe-area-inset-bottom));
+  }
+
+  .card{
+    padding:15px 18px; border-bottom:1px solid var(--line);
+    display:grid; grid-template-columns:auto 1fr; gap:4px 14px;
+    cursor:pointer;
+  }
+  .card:active{background:var(--panel)}
+
+  /* 경과시간 - 이 화면에서 가장 중요한 정보 */
+  .elapsed{
+    grid-row:span 3; align-self:start;
+    font-size:15px; font-weight:700; font-variant-numeric:tabular-nums;
+    padding:6px 9px; border-radius:6px; white-space:nowrap;
+    background:rgba(255,90,31,.14); color:var(--hot);
+  }
+  .elapsed.old{background:rgba(92,122,153,.14); color:var(--cool)}
+
+  .region{font-size:18px; font-weight:700; letter-spacing:-.02em}
+  .title{font-size:15px; color:var(--dim); line-height:1.5}
+  .tags{display:flex; gap:8px; font-size:13px; color:var(--dim); margin-top:2px}
+  .tag{padding:2px 7px; border:1px solid var(--line); border-radius:4px}
+  .tag.alert{border-color:var(--hot); color:var(--warm)}
+
+  .empty{padding:60px 24px; text-align:center; color:var(--dim); line-height:1.7}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>수도권 화재</h1>
+  <span class="meta">
+    <button id="sortbtn" class="sortbtn">최신순</button>
+    <span class="count" id="count">–</span>건 · <span id="updated">불러오는 중</span>
+  </span>
+</header>
+
+<div id="map"></div>
+<div class="filterbar">
+  <button class="fbtn on" data-f="all">전체</button>
+  <button class="fbtn" data-f="ok">방문 가능</button>
+  <button class="fbtn" data-f="star">★★ 이상</button>
+</div>
+<div id="list"></div>
+
+<script>
+/* ── 설정 ─────────────────────────────────────── */
+const CENTER = { lat: 37.6584, lon: 126.8320 };   // 고양시청 기준
+const DATA_URL = 'fires.enc?t=' + Date.now();     // 암호화된 데이터 (캐시 방지)
+const PW_KEY = 'fw_pw';                             // 이 기기에 비밀번호 기억
+
+/* ── 지도 만들기 ──────────────────────────────── */
+const map = new kakao.maps.Map(document.getElementById('map'), {
+  center: new kakao.maps.LatLng(CENTER.lat, CENTER.lon),
+  level: 8       // 수도권 전체가 보이는 정도
+});
+
+const markers = {};
+// 주소는 미리 저장하지 않고, 버튼을 누를 때만 불러옵니다
+const geocoder = new kakao.maps.services.Geocoder();
+
+/* ── 경과시간 계산 ────────────────────────────── */
+function elapsedText(iso) {
+  if (!iso) return '시각미상';
+  const mins = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (mins < 1) return '방금';
+  if (mins < 60) return mins + '분 전';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + '시간 전';
+  return Math.floor(hrs / 24) + '일 전';
+}
+
+/* ── 화면 그리기 ──────────────────────────────── */
+function render(data) {
+  _data = data;
+  let fires = (data.fires || []).slice();
+  if (_filter === 'ok') fires = fires.filter(f => f.visit === '방문가능' || f.visit === '곧가능');
+  if (_filter === 'star') fires = fires.filter(f => (f.score || 0) >= 45);
+    const topN = fires.filter(f => (f.score || 0) >= 50).length;
+  document.getElementById('count').textContent = topN > 0 ? ('★' + topN + ' / ' + fires.length) : fires.length;
+  document.getElementById('updated').textContent =
+    new Date(data.updated_at).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'}) + ' 갱신';
+
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  if (!fires.length) {
+    list.innerHTML = '<div class="empty">수도권에 잡힌 화재 소식이 없습니다.<br>10분마다 자동으로 확인합니다.</div>';
+    return;
+  }
+  // 최신순. 시각이 같으면 점수 높은 것을 먼저.
+  if (_byScore) {
+    fires.sort((a, b) => (b.score || 0) - (a.score || 0));
+  } else {
+    fires.sort((a, b) => {
+      const ta = a.published || '', tb = b.published || '';
+      if (ta !== tb) return tb.localeCompare(ta);
+      return (b.score || 0) - (a.score || 0);
+    });
+  }
+  const bounds = new kakao.maps.LatLngBounds();
+
+  fires.forEach(f => {
+    const pos = new kakao.maps.LatLng(f.lat, f.lon);
+    bounds.extend(pos);
+
+    const marker = new kakao.maps.Marker({ map, position: pos, title: f.region });
+    markers[f.id] = marker;
+
+    const info = new kakao.maps.InfoWindow({
+      content: `<div style="padding:8px 10px;font-size:13px;max-width:220px">
+                  <b>${f.region || '위치 미상'}</b><br>${elapsedText(f.published)}
+                </div>`
+    });
+    kakao.maps.event.addListener(marker, 'click', () => info.open(map, marker));
+
+    /* 목록 카드 */
+    const isOld = f.published && (Date.now() - new Date(f.published)) > 6 * 3600 * 1000;
+    const card = document.createElement('div');
+        card.className = 'card' + ((f.score || 0) >= 45 ? ' top' : '') + (f.visit === '진화중' ? ' busy' : '');
+    card.innerHTML = `
+      <div class="elapsed ${isOld ? 'old' : ''}">${elapsedText(f.published)}</div>
+      ${f.source === '재난문자' ? '<div class="msgbadge">📢 긴급재난문자</div>' : ''}
+      ${(f.source && f.source !== '재난문자' && f.source !== '소방출동') ? `<div class="newsbadge">📰 뉴스 · ${f.source}</div>` : ''}
+      ${f.forpartner === false ? '<div class="ownerbadge">👤 사장님 확인</div>' : ''}
+      ${f.visit ? `<div class="visit ${f.visit === '방문가능' ? 'ok' : f.visit === '곧가능' ? 'soon' : 'no'}">${f.visit === '방문가능' ? '방문 가능' : f.visit === '곧가능' ? '곧 가능' : '진화 중'}</div>` : ''}
+      <div class="region">${f.grade ? `<span class="grade ${f.grade.length < 2 ? 'g1' : ''}">${f.grade}</span>` : ''}${f.region || '위치 미상'}</div>
+      <div class="title">${f.source === '재난문자' ? (f.title || '') : (f.kind || f.title || '')}${f.building ? `<br><b style="color:var(--text)">🏢 ${f.building}${f.bkind ? ' (' + f.bkind + ')' : ''}</b>` : ''}</div>
+      <div class="tags">
+      </div>`;
+    card.onclick = () => {
+      map.setLevel(5);
+      map.panTo(pos);
+      info.open(map, marker);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    const addrBtn = document.createElement('button');
+    addrBtn.className = 'addrbtn';
+    addrBtn.textContent = '주소 보기';
+    addrBtn.onclick = (e) => {
+      e.stopPropagation();
+      addrBtn.textContent = '불러오는 중...';
+      geocoder.coord2Address(f.lon, f.lat, (res, status) => {
+        if (status === kakao.maps.services.Status.OK && res[0]) {
+          const r = res[0].road_address, j = res[0].address;
+          addrBtn.textContent = (r ? r.address_name : j.address_name) + ' › 지도앱으로 열기';
+          addrBtn.classList.add('done');
+          addrBtn.onclick = (ev) => { ev.stopPropagation();
+            window.open('https://map.kakao.com/link/map/' + encodeURIComponent(f.region) + ',' + f.lat + ',' + f.lon); };
+        } else { addrBtn.textContent = '주소를 찾지 못했습니다'; }
+      });
+    };
+    card.appendChild(addrBtn);
+    list.appendChild(card);
+  });
+
+  map.setBounds(bounds);
+}
+
+let _data = null, _byScore = false, _filter = 'all';
+
+document.querySelectorAll('.fbtn').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('.fbtn').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    _filter = b.dataset.f;
+    if (_data) render(_data);
+  };
+});
+
+document.getElementById('sortbtn').onclick = () => {
+  _byScore = !_byScore;
+  document.getElementById('sortbtn').textContent = _byScore ? '우선순위순' : '최신순';
+  if (_data) render(_data);
+};
+
+/* ── 데이터 불러오기 (비밀번호로 풀기) ────────── */
+const b64 = t => Uint8Array.from(atob(t), c => c.charCodeAt(0));
+
+async function decrypt(box, pw) {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: b64(box.salt), iterations: 200000, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(box.iv) }, key, b64(box.ct));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+function askPassword(msg) {
+  return new Promise(resolve => {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;inset:0;z-index:9999;background:var(--ink);display:flex;align-items:center;justify-content:center;padding:24px';
+    d.innerHTML = '<div style="width:100%;max-width:320px;display:flex;flex-direction:column;gap:12px">' +
+      '<div style="font-size:20px;font-weight:800">🔒 수도권 화재 상황판</div>' +
+      '<div style="color:var(--dim);font-size:15px">' + msg + '</div>' +
+      '<input id="pwin" type="password" placeholder="비밀번호" style="font-size:18px;padding:12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text)">' +
+      '<button id="pwok" style="font-size:18px;padding:12px;border-radius:8px;border:0;background:var(--hot);color:#fff;font-weight:700">열기</button></div>';
+    document.body.appendChild(d);
+    const go = () => { const v = d.querySelector('#pwin').value; d.remove(); resolve(v); };
+    d.querySelector('#pwok').onclick = go;
+    d.querySelector('#pwin').onkeydown = e => { if (e.key === 'Enter') go(); };
+    d.querySelector('#pwin').focus();
+  });
+}
+
+async function load() {
+  let box;
+  try { box = await (await fetch(DATA_URL)).json(); }
+  catch (e) {
+    document.getElementById('updated').textContent = '데이터를 못 읽었습니다';
+    return;
+  }
+  let pw = null, msg = '비밀번호를 입력하세요. 이 기기에서는 한 번만 입력하면 됩니다.';
+  try { pw = localStorage.getItem(PW_KEY); } catch (e) {}
+  for (;;) {
+    if (!pw) pw = await askPassword(msg);
+    try {
+      const data = await decrypt(box, pw);
+      try { localStorage.setItem(PW_KEY, pw); } catch (e) {}
+      render(data);
+      return;
+    } catch (e) {
+      try { localStorage.removeItem(PW_KEY); } catch (e2) {}
+      pw = null; msg = '비밀번호가 틀렸습니다. 다시 입력하세요.';
+    }
+  }
+}
+load();
+
+/* 5분마다 새로고침 */
+setInterval(() => location.reload(), 5 * 60 * 1000);
+</script>
+</body>
+</html>
